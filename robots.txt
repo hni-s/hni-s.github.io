@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://xxxxxxxx/sitemap.xml
+Sitemap: https://hni-s.github.io/sitemap.xml
