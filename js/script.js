@@ -1,973 +1,331 @@
 // ===== MOBILE MENU =====
 const menu = document.getElementById('menu');
 const nav = document.getElementById('navLinks');
-
 if (menu) {
-  menu.addEventListener('click', () => {
-    nav.classList.toggle('show');
-  });
+  menu.addEventListener('click', () => nav.classList.toggle('show'));
 }
-
 document.querySelectorAll('.nav-links a').forEach(a => {
-  a.addEventListener('click', () => {
-    nav.classList.remove('show');
-  });
+  a.addEventListener('click', () => nav.classList.remove('show'));
 });
 
-// ===== PRELOADER - Prevent Flash =====
-(function initPreloader() {
-  document.body.classList.add('loading');
-  
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', ready);
-  } else {
-    ready();
-  }
-  
-  function ready() {
-    setTimeout(() => {
-      document.body.classList.remove('loading');
-      document.body.classList.add('loaded');
-    }, 100);
-  }
-})();
-
-// ===== ACTIVE TAB DETECTION =====
-const currentPage = window.location.pathname.split('/').pop() || 'index.html';
-
-document.querySelectorAll('.nav-links a').forEach(link => {
-  const linkHref = link.getAttribute('href');
-  if (linkHref === currentPage) {
-    link.classList.add('active');
-  }
-});
-
-// ===== REVEAL ANIMATIONS =====
-const observer = new IntersectionObserver((entries) => {
+// ===== REVEAL ON SCROLL =====
+const revealObserver = new IntersectionObserver((entries) => {
   entries.forEach(entry => {
     if (entry.isIntersecting) {
       entry.target.classList.add('show');
-      observer.unobserve(entry.target);
+      revealObserver.unobserve(entry.target);
     }
   });
 }, { threshold: 0.12 });
+document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
 
-document.querySelectorAll('.reveal').forEach(el => {
-  observer.observe(el);
-});
-
-// ===== AUTO UPDATE YEAR =====
+// ===== YEAR =====
 document.querySelectorAll('[data-year]').forEach(el => {
   el.textContent = new Date().getFullYear();
 });
 
-// ===== IMAGE ERROR HANDLING =====
+// ===== IMAGE FALLBACK (non-slideshow images) =====
 document.querySelectorAll('img').forEach(img => {
-  img.addEventListener('error', function() {
-    if (this.parentElement.classList.contains('project-img')) {
-      this.parentElement.innerHTML = '<i class="fa-solid fa-image"></i>';
-    } else {
-      this.style.visibility = 'hidden';
-    }
+  if (img.closest('.project-img')) return; // handled by initProjectSlideshows
+  img.addEventListener('error', function () {
+    this.style.visibility = 'hidden';
   });
 });
 
-// ===== STATS COUNTING ANIMATION =====
-function animateCounter(element, target, suffix, duration) {
-  const increment = target / (duration / 16);
-  let current = 0;
+// ===== PROJECT SLIDESHOWS (5 images per card, animated) =====
+(function initProjectSlideshows() {
+  document.querySelectorAll('.project-img').forEach((container, idx) => {
+    const slides = Array.from(container.querySelectorAll('.slide'));
+    const dots = Array.from(container.querySelectorAll('.slide-dots span'));
+    if (!slides.length) return;
 
-  const timer = setInterval(() => {
-    current += increment;
-    if (current >= target) {
-      current = target;
-      clearInterval(timer);
+    let current = 0;
+    let liveSlides = slides.slice();
+
+    function showFallback() {
+      const icon = container.dataset.fallbackIcon || 'fa-image';
+      container.innerHTML = `<i class="fa-solid ${icon}"></i>`;
     }
-    if (suffix === '/7') {
-      element.textContent = Math.floor(current) + '/7';
-    } else {
-      element.textContent = Math.floor(current) + suffix;
-    }
-  }, 16);
-}
 
-const statsObserver = new IntersectionObserver((entries) => {
-  entries.forEach(entry => {
-    if (entry.isIntersecting) {
-      const stats = entry.target.querySelectorAll('.stat');
-      stats.forEach((stat, index) => {
-        const numberEl = stat.querySelector('.stat-number');
-        const target = parseInt(stat.dataset.count);
-        const suffix = stat.dataset.suffix || '+';
-        const duration = 2000 + (index * 200);
-
-        if (suffix === '/7') {
-          numberEl.textContent = '0/7';
-        } else {
-          numberEl.textContent = '0' + suffix;
-        }
-
-        setTimeout(() => {
-          animateCounter(numberEl, target, suffix, duration);
-        }, index * 150);
+    // Track broken images; if every slide in a card fails, show a fallback icon.
+    let brokenCount = 0;
+    slides.forEach(slide => {
+      const img = slide.querySelector('img');
+      img.addEventListener('error', () => {
+        slide.dataset.broken = '1';
+        brokenCount++;
+        liveSlides = slides.filter(s => s.dataset.broken !== '1');
+        if (brokenCount >= slides.length) showFallback();
       });
-      statsObserver.unobserve(entry.target);
-    }
-  });
-}, { threshold: 0.3 });
+    });
 
+    function advance() {
+      if (!liveSlides.length) return;
+      const currentSlide = slides[current];
+      let next = current;
+      for (let i = 0; i < slides.length; i++) {
+        next = (next + 1) % slides.length;
+        if (slides[next].dataset.broken !== '1') break;
+      }
+      if (next === current) return;
+      currentSlide.classList.remove('active');
+      dots[current] && dots[current].classList.remove('active');
+      current = next;
+      slides[current].classList.add('active');
+      dots[current] && dots[current].classList.add('active');
+    }
+
+    // Stagger each card's rotation so they don't all flip in sync.
+    setInterval(advance, 2600 + idx * 350);
+  });
+})();
+
+// ===== STAT COUNTERS =====
+function animateCounter(el, target, suffix, duration) {
+  const start = performance.now();
+  function step(now) {
+    const p = Math.min((now - start) / duration, 1);
+    const val = Math.floor(p * target);
+    el.textContent = suffix === '/7' ? val + '/7' : val + suffix;
+    if (p < 1) requestAnimationFrame(step);
+    else el.textContent = suffix === '/7' ? target + '/7' : target + suffix;
+  }
+  requestAnimationFrame(step);
+}
 const statsGrid = document.getElementById('statsGrid');
 if (statsGrid) {
+  const statsObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.querySelectorAll('.stat-lg').forEach((stat, i) => {
+          const numberEl = stat.querySelector('.stat-number');
+          const target = parseInt(stat.dataset.count);
+          const suffix = stat.dataset.suffix || '+';
+          numberEl.textContent = '0' + suffix;
+          setTimeout(() => animateCounter(numberEl, target, suffix, 1600), i * 120);
+        });
+        statsObserver.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.3 });
   statsObserver.observe(statsGrid);
 }
 
-// ===== CYBER BACKGROUND ANIMATION =====
-(function initCyberBackground() {
-  const canvas = document.getElementById('hero-canvas');
-  if (!canvas) return;
-  
-  const ctx = canvas.getContext('2d');
-  let animationId = null;
-  let dots = [];
-  let isVisible = true;
-  let isInitialized = false;
+// ===== LIVE FEED TERMINAL TYPEWRITER =====
+(function initFeed() {
+  const feed = document.getElementById('liveFeed');
+  if (!feed) return;
 
-  function resizeCanvas() {
-    const rect = canvas.parentElement.getBoundingClientRect();
-    canvas.width = rect.width || window.innerWidth;
-    canvas.height = rect.height || window.innerHeight;
-    initDots();
-  }
+  const lines = [
+    'CAM-14 NORTH GATE ............ <span class="ok">ONLINE</span>',
+    'ACCESS GRANTED — J. KHAN ...... 09:41:02',
+    'PERIMETER SENSOR 03 ........... <span class="ok">ARMED</span>',
+    'NETWORK UPLINK ................ <span class="ok">STABLE</span>',
+    'FIRE PANEL — ZONE B ........... <span class="ok">NORMAL</span>',
+    'PATROL CHECK-IN — GATE 02 ..... LOGGED',
+    'MOTION EVENT — LOADING BAY .... <span class="warn">REVIEW</span>',
+    'BACKUP SNAPSHOT ............... <span class="ok">COMPLETE</span>',
+    'VISITOR BADGE #4471 ........... ISSUED',
+    'SYSTEM HEALTH CHECK ........... <span class="ok">PASSED</span>'
+  ];
 
-  function initDots() {
-    const count = Math.min(50, Math.floor((canvas.width * canvas.height) / 25000));
-    dots = [];
-    for (let i = 0; i < count; i++) {
-      dots.push({
-        x: Math.random() * canvas.width,
-        y: Math.random() * canvas.height,
-        vx: (Math.random() - 0.5) * 0.3,
-        vy: (Math.random() - 0.5) * 0.3,
-        size: Math.random() * 2 + 1,
-        alpha: Math.random() * 0.5 + 0.2
-      });
-    }
-  }
+  let li = 0;
+  const maxVisible = 7;
 
-  function drawDots() {
-    if (!isVisible) return;
-    
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    dots.forEach(dot => {
-      dot.x += dot.vx;
-      dot.y += dot.vy;
-      
-      if (dot.x < 0 || dot.x > canvas.width) dot.vx *= -1;
-      if (dot.y < 0 || dot.y > canvas.height) dot.vy *= -1;
-      
-      ctx.save();
-      ctx.globalAlpha = dot.alpha;
-      ctx.fillStyle = '#4aafff';
-      ctx.shadowColor = '#4aafff';
-      ctx.shadowBlur = 8;
-      ctx.beginPath();
-      ctx.arc(dot.x, dot.y, dot.size, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    });
-    
-    for (let i = 0; i < dots.length; i++) {
-      for (let j = i + 1; j < dots.length; j++) {
-        const dx = dots[i].x - dots[j].x;
-        const dy = dots[i].y - dots[j].y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        
-        if (dist < 120) {
-          ctx.save();
-          ctx.globalAlpha = 0.1 * (1 - dist / 120);
-          ctx.strokeStyle = '#4aafff';
-          ctx.lineWidth = 0.5;
-          ctx.shadowColor = '#4aafff';
-          ctx.shadowBlur = 4;
-          ctx.beginPath();
-          ctx.moveTo(dots[i].x, dots[i].y);
-          ctx.lineTo(dots[j].x, dots[j].y);
-          ctx.stroke();
-          ctx.restore();
-        }
+  function typeLine(text, el, cb) {
+    let i = 0;
+    const speed = 14;
+    function tick() {
+      el.innerHTML = text.slice(0, i) + '<span class="monitor-caret"></span>';
+      i++;
+      if (i <= text.length) {
+        setTimeout(tick, speed);
+      } else {
+        el.innerHTML = text;
+        cb();
       }
     }
-    
-    animationId = requestAnimationFrame(drawDots);
+    tick();
   }
 
-  function handleVisibilityChange() {
-    isVisible = !document.hidden;
-    if (isVisible && !animationId && isInitialized) {
-      drawDots();
-    } else if (!isVisible && animationId) {
-      cancelAnimationFrame(animationId);
-      animationId = null;
-    }
+  function addLine() {
+    const raw = lines[li % lines.length];
+    li++;
+    const row = document.createElement('div');
+    row.className = 'feed-line';
+    row.style.opacity = '1';
+    feed.appendChild(row);
+
+    typeLine(raw, row, () => {
+      while (feed.children.length > maxVisible) {
+        feed.removeChild(feed.firstChild);
+      }
+      setTimeout(addLine, 900);
+    });
   }
 
-  document.addEventListener('visibilitychange', handleVisibilityChange);
+  addLine();
+})();
 
-  const resizeObserver = new ResizeObserver(() => {
-    resizeCanvas();
+// ===== MARQUEE (duplicate track for seamless loop) =====
+(function initMarquee() {
+  document.querySelectorAll('.marquee-track').forEach(track => {
+    track.innerHTML += track.innerHTML;
   });
-
-  const parent = canvas.parentElement;
-  if (parent) {
-    resizeObserver.observe(parent);
-  }
-
-  window.addEventListener('resize', resizeCanvas);
-  
-  setTimeout(() => {
-    resizeCanvas();
-    isInitialized = true;
-    drawDots();
-  }, 50);
-
-  return function cleanup() {
-    if (animationId) {
-      cancelAnimationFrame(animationId);
-      animationId = null;
-    }
-    resizeObserver.disconnect();
-    document.removeEventListener('visibilitychange', handleVisibilityChange);
-  };
 })();
 
-// ===== PARTICLES CONTAINER =====
-(function initParticles() {
-  const container = document.getElementById('particlesContainer');
-  if (!container) return;
-  
-  container.innerHTML = '';
-  
-  const count = Math.min(25, Math.floor((window.innerWidth * window.innerHeight) / 35000));
-  
-  for (let i = 0; i < count; i++) {
-    const particle = document.createElement('div');
-    particle.className = 'particle';
-    
-    const size = Math.random() * 3 + 2;
-    const x = Math.random() * 100;
-    const y = Math.random() * 100;
-    const duration = Math.random() * 4 + 3;
-    const delay = Math.random() * 5;
-    const distance = Math.random() * 150 + 80;
-    
-    particle.style.cssText = `
-      left: ${x}%;
-      top: ${y}%;
-      width: ${size}px;
-      height: ${size}px;
-      --duration: ${duration}s;
-      --distance: ${-distance}px;
-      animation-delay: ${delay}s;
-    `;
-    
-    container.appendChild(particle);
-  }
-})();
-
-// ===== CARD TILT EFFECT =====
+// ===== CUSTOM CURSOR =====
 const isFinePointer = window.matchMedia('(pointer: fine)').matches;
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-(function initCardTilt() {
-  if (!isFinePointer || prefersReducedMotion) return;
+(function initCursor() {
+  if (!isFinePointer) return;
+  const dot = document.createElement('div');
+  dot.id = 'cursor-dot';
+  const ring = document.createElement('div');
+  ring.id = 'cursor-ring';
+  document.body.append(dot, ring);
 
-  const selector = '.card, .service-card, .stat';
-  document.querySelectorAll(selector).forEach(el => {
-    el.addEventListener('mousemove', (e) => {
-      const r = el.getBoundingClientRect();
-      const px = (e.clientX - r.left) / r.width;
-      const py = (e.clientY - r.top) / r.height;
-      const rotateX = (0.5 - py) * 6;
-      const rotateY = (px - 0.5) * 6;
-      el.style.transform = `perspective(800px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateY(-4px)`;
-      el.style.setProperty('--mx', `${px * 100}%`);
-      el.style.setProperty('--my', `${py * 100}%`);
-    });
-    el.addEventListener('mouseleave', () => {
-      el.style.transform = '';
-    });
+  let mx = innerWidth / 2, my = innerHeight / 2, rx = mx, ry = my;
+  addEventListener('mousemove', (e) => {
+    mx = e.clientX; my = e.clientY;
+    dot.style.transform = `translate(${mx}px, ${my}px) translate(-50%,-50%)`;
   });
+  (function loop() {
+    rx += (mx - rx) * 0.2;
+    ry += (my - ry) * 0.2;
+    ring.style.transform = `translate(${rx}px, ${ry}px) translate(-50%,-50%)`;
+    requestAnimationFrame(loop);
+  })();
+
+  const targets = 'a, button, .btn, .badge-card, .fab, .nav-btn, input, select, textarea, .menu';
+  document.addEventListener('mouseover', (e) => { if (e.target.closest(targets)) ring.classList.add('hover'); });
+  document.addEventListener('mouseout', (e) => { if (e.target.closest(targets)) ring.classList.remove('hover'); });
 })();
 
-// ===== FIX: Ensure smooth load on page change =====
-(function initPageLoad() {
-  window.addEventListener('load', function() {
-    document.querySelectorAll('.page-hero.cyber-hero, .hero.cyber-hero').forEach(el => {
-      el.style.opacity = '1';
-    });
-  });
-  
-  window.addEventListener('pageshow', function(event) {
-    if (event.persisted) {
-      document.querySelectorAll('.page-hero.cyber-hero, .hero.cyber-hero').forEach(el => {
-        el.style.opacity = '1';
-      });
+// ===== "ASK HNIS" ASSISTANT (client-side FAQ widget) =====
+// Note: this runs entirely in the browser — it matches your question against
+// a fixed set of answers below. It is not a live/connected AI model.
+(function initAssistant() {
+  const trigger = document.getElementById('aiAssistantBtn');
+  if (!trigger) return;
+
+  const qa = [
+    {
+      q: 'What services does HNIS provide?',
+      a: 'We handle six areas in-house: CCTV & surveillance, access control & biometrics, structured networking, cyber & IT security, fire & life safety, and systems integration.'
+    },
+    {
+      q: 'Which areas do you serve?',
+      a: 'We operate across Pakistan and can scope multi-site deployments for organizations with more than one location.'
+    },
+    {
+      q: 'Do you support systems after installation?',
+      a: 'Yes — every install includes access to our 24/7 monitoring desk, plus optional ongoing maintenance and service agreements.'
+    },
+    {
+      q: 'How long does a typical installation take?',
+      a: 'It depends on scope. Most single-site CCTV or access-control projects complete in 1–3 weeks after the design is approved.'
+    },
+    {
+      q: 'Can you integrate systems from different brands?',
+      a: 'Yes. We design cross-platform integration so cameras, access control and alarms from different manufacturers report to one dashboard.'
+    },
+    {
+      q: 'Do you provide free site surveys?',
+      a: "Yes — request a site survey and we'll schedule a walkthrough, usually within 3–5 business days."
+    },
+    {
+      q: 'How do I get a quote?',
+      a: 'Fill out the contact form, or WhatsApp / call us directly at 0300 800 5682 with your building type and requirements.'
     }
+  ];
+
+  // Build panel once
+  const panel = document.createElement('div');
+  panel.className = 'assistant-panel';
+  panel.innerHTML = `
+    <div class="assistant-head">
+      <i class="fa-solid fa-robot"></i>
+      <div><strong>Ask HNIS</strong><span class="status">● Quick answers, no waiting</span></div>
+      <button class="assistant-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="assistant-body" id="assistantBody">
+      <div class="assistant-msg bot">Hi — I'm the HNIS quick-answer desk. Tap a question below, or type your own.</div>
+      <div class="assistant-quick" id="assistantQuick"></div>
+    </div>
+    <div class="assistant-input-row">
+      <input type="text" id="assistantInput" placeholder="Type a question...">
+      <button id="assistantSend"><i class="fa-solid fa-paper-plane"></i></button>
+    </div>
+  `;
+  document.body.appendChild(panel);
+
+  const body = panel.querySelector('#assistantBody');
+  const quick = panel.querySelector('#assistantQuick');
+  const input = panel.querySelector('#assistantInput');
+  const sendBtn = panel.querySelector('#assistantSend');
+  const closeBtn = panel.querySelector('.assistant-close');
+
+  qa.forEach(item => {
+    const btn = document.createElement('button');
+    btn.textContent = item.q;
+    btn.addEventListener('click', () => ask(item.q));
+    quick.appendChild(btn);
   });
+
+  function addMsg(text, who) {
+    const msg = document.createElement('div');
+    msg.className = 'assistant-msg ' + who;
+    msg.textContent = text;
+    body.appendChild(msg);
+    body.scrollTop = body.scrollHeight;
+  }
+
+  function findAnswer(text) {
+    const t = text.toLowerCase();
+    let best = null, bestScore = 0;
+    qa.forEach(item => {
+      const words = item.q.toLowerCase().split(/\W+/).filter(w => w.length > 3);
+      let score = 0;
+      words.forEach(w => { if (t.includes(w)) score++; });
+      if (score > bestScore) { bestScore = score; best = item; }
+    });
+    return bestScore > 0 ? best.a : "I don't have a canned answer for that yet — please reach the ops desk at 0300 800 5682 or getinfo.hnis@gmail.com and a technician will get back to you.";
+  }
+
+  function ask(text) {
+    addMsg(text, 'user');
+    setTimeout(() => addMsg(findAnswer(text), 'bot'), 300);
+  }
+
+  sendBtn.addEventListener('click', () => {
+    const val = input.value.trim();
+    if (!val) return;
+    ask(val);
+    input.value = '';
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') sendBtn.click();
+  });
+
+  trigger.addEventListener('click', (e) => {
+    e.preventDefault();
+    panel.classList.toggle('open');
+  });
+  closeBtn.addEventListener('click', () => panel.classList.remove('open'));
 })();
 
-// ============================================================
-// AI CHAT BOT - FAB UPDATE 2
-// ============================================================
-
-function toggleChat() {
-  const modal = document.getElementById('aiChatModal');
-  if (!modal) return;
-  modal.classList.toggle('active');
-  if (modal.classList.contains('active')) {
-    const input = document.getElementById('chatInput');
-    if (input) input.focus();
-  }
-}
-
-function sendMessage() {
-  const input = document.getElementById('chatInput');
-  if (!input) return;
-  const message = input.value.trim();
-  if (!message) return;
-  
-  addMessage(message, 'user');
-  input.value = '';
-  
-  setTimeout(() => {
-    const response = getBotResponse(message);
-    addMessage(response, 'bot');
-  }, 500 + Math.random() * 500);
-}
-
-function askQuestion(question) {
-  addMessage(question, 'user');
-  
-  const quickQs = document.getElementById('quickQuestions');
-  if (quickQs) {
-    quickQs.style.display = 'none';
-  }
-  
-  setTimeout(() => {
-    const response = getBotResponse(question);
-    addMessage(response, 'bot');
-  }, 500 + Math.random() * 500);
-}
-
-function addMessage(text, sender) {
-  const body = document.getElementById('chatBody');
-  if (!body) return;
-  
-  const quickQs = document.getElementById('quickQuestions');
-  if (quickQs && sender === 'user') {
-    quickQs.style.display = 'none';
-  }
-  
-  const messageDiv = document.createElement('div');
-  messageDiv.className = `chat-message ${sender}`;
-  
-  const avatar = document.createElement('div');
-  avatar.className = 'chat-avatar';
-  if (sender === 'bot') {
-    avatar.innerHTML = '<i class="fa-solid fa-robot"></i>';
-  } else {
-    avatar.innerHTML = '<i class="fa-solid fa-user"></i>';
-  }
-  
-  const bubble = document.createElement('div');
-  bubble.className = 'chat-bubble';
-  bubble.innerHTML = text;
-  
-  messageDiv.appendChild(avatar);
-  messageDiv.appendChild(bubble);
-  
-  body.appendChild(messageDiv);
-  body.scrollTop = body.scrollHeight;
-}
-
-function getBotResponse(question) {
-  const q = question.toLowerCase();
-  
-  if (q.includes('service') || q.includes('offer') || q.includes('provide')) {
-    return `We offer a comprehensive range of IT and security solutions:<br><br>
-    • CCTV & Video Surveillance<br>
-    • Access Control & Biometrics<br>
-    • Networking & IT Infrastructure<br>
-    • Cyber & IT Security<br>
-    • Fire Alarm & Safety Systems<br>
-    • Engineering & System Integration<br><br>
-    <strong>Would you like to know more about any specific service?</strong>`;
-  }
-  
-  if (q.includes('quote') || q.includes('cost') || q.includes('price')) {
-    return `To get a customized quote, please visit our <a href="contact.html" style="color:#1a8cff;font-weight:600;">Contact Page</a> or call us directly at <strong>+92 300 8005682</strong>.<br><br>
-    Our team will get back to you within 24 hours with a detailed proposal.`;
-  }
-  
-  if (q.includes('industry') || q.includes('sector') || q.includes('serve')) {
-    return `We serve a wide range of industries including:<br><br>
-    • Corporate Offices<br>
-    • Industrial Facilities<br>
-    • Commercial Buildings<br>
-    • Educational Institutions<br>
-    • Healthcare Facilities<br>
-    • Government & Critical Infrastructure<br><br>
-    Each solution is tailored to meet specific industry requirements.`;
-  }
-  
-  if (q.includes('support') || q.includes('24/7') || q.includes('help')) {
-    return `Yes! We provide <strong>24/7 Technical Support</strong> for all our clients.<br><br>
-    • Emergency response team available round the clock<br>
-    • Remote monitoring and support<br>
-    • On-site support for critical issues<br>
-    • Dedicated support hotline: <strong>+92 300 8005682</strong>`;
-  }
-  
-  if (q.includes('location') || q.includes('where') || q.includes('address')) {
-    return `Our main office is located in <strong>Pakistan</strong>.<br><br>
-    We serve clients across the country with dedicated project teams.<br><br>
-    For specific location details or site visits, please contact our team at <strong>+92 300 8005682</strong>.`;
-  }
-  
-  if (q.includes('about') || q.includes('company') || q.includes('who')) {
-    return `HNIS (HN Integrated Solutions) is a professional IT, security, and engineering solutions provider.<br><br>
-    We specialize in delivering practical, scalable, and professionally integrated technology and security solutions for modern organizations.<br><br>
-    Our approach combines system design, installation, integration, and long-term technical support.`;
-  }
-  
-  return `Thank you for your question! 🤖<br><br>
-  I'll connect you with our team to provide the best possible answer.<br><br>
-  In the meantime, you can:<br>
-  • Visit our <a href="services.html" style="color:#1a8cff;font-weight:600;">Services Page</a><br>
-  • Check out our <a href="projects.html" style="color:#1a8cff;font-weight:600;">Project Portfolio</a><br>
-  • <a href="contact.html" style="color:#1a8cff;font-weight:600;">Contact us</a> for immediate assistance<br><br>
-  <strong>Is there anything specific you'd like to know?</strong>`;
-}
-// ===== CONTACT FORM - SEND OPTIONS =====
-
-// Get form values helper
-function getFormValues() {
-  const name = document.getElementById('fullName').value.trim();
-  const email = document.getElementById('emailAddress').value.trim();
-  const phone = document.getElementById('phoneNumber').value.trim();
-  const service = document.getElementById('serviceSelect').value;
-  const message = document.getElementById('messageText').value.trim();
-  return { name, email, phone, service, message };
-}
-
-// Validate form
-function validateForm() {
-  const { name, email, phone, message } = getFormValues();
-  
-  if (!name) {
-    showPopup('error', 'Please enter your full name.');
-    return false;
-  }
-  if (!email) {
-    showPopup('error', 'Please enter your email address.');
-    return false;
-  }
-  if (!validateEmail(email)) {
-    showPopup('error', 'Please enter a valid email address.');
-    return false;
-  }
-  if (!phone) {
-    showPopup('error', 'Please enter your phone number.');
-    return false;
-  }
-  if (!message) {
-    showPopup('error', 'Please describe your requirement.');
-    return false;
-  }
-  return true;
-}
-
-// ===== SEND VIA WHATSAPP =====
-function sendWhatsApp() {
-  if (!validateForm()) return;
-  
-  const { name, email, phone, service, message } = getFormValues();
-  const serviceName = service || 'Not Selected';
-  
-  const whatsappMessage = 
-    `*New HNIS Inquiry*%0A%0A` +
-    `*Name:* ${name}%0A` +
-    `*Email:* ${email}%0A` +
-    `*Phone:* ${phone}%0A` +
-    `*Service:* ${serviceName}%0A%0A` +
-    `*Message:* ${message}`;
-  
-  // Open WhatsApp
-  window.open(`https://wa.me/923001234567?text=${whatsappMessage}`, '_blank');
-  
-  showPopup('success', `
-    <strong>WhatsApp Message Sent! 💬</strong><br><br>
-    Your inquiry has been sent via WhatsApp.<br><br>
-    <strong>Details:</strong><br>
-    👤 ${name}<br>
-    📧 ${email}<br>
-    📱 ${phone}<br>
-    🔧 ${serviceName}<br><br>
-    <small>Our team will respond to you shortly on WhatsApp.</small>
-  `);
-  
-  document.getElementById('contactForm').reset();
-}
-
-// ===== SEND VIA EMAIL =====
-function sendEmail() {
-  if (!validateForm()) return;
-  
-  const { name, email, phone, service, message } = getFormValues();
-  const serviceName = service || 'Not Selected';
-  
-  const subject = `New Inquiry from ${name}`;
-  const body = 
-    `Name: ${name}%0A` +
-    `Email: ${email}%0A` +
-    `Phone: ${phone}%0A` +
-    `Service: ${serviceName}%0A%0A` +
-    `Message:${message}`;
-  
-  // Open email client
-  window.location.href = `mailto:info@hnis.com?subject=${subject}&body=${body}`;
-  
-  showPopup('success', `
-    <strong>Email Sent! 📧</strong><br><br>
-    Your inquiry has been sent via email.<br><br>
-    <strong>Details:</strong><br>
-    👤 ${name}<br>
-    📧 ${email}<br>
-    📱 ${phone}<br>
-    🔧 ${serviceName}<br><br>
-    <small>Our team will respond to you shortly via email.</small>
-  `);
-  
-  document.getElementById('contactForm').reset();
-}
-
-// ===== SEND VIA BOTH (WhatsApp + Email) =====
-function submitForm(event) {
-  event.preventDefault();
-  
-  if (!validateForm()) return false;
-  
-  const { name, email, phone, service, message } = getFormValues();
-  const serviceName = service || 'Not Selected';
-  
-  // Send WhatsApp
-  const whatsappMessage = 
-    `*New HNIS Inquiry*%0A%0A` +
-    `*Name:* ${name}%0A` +
-    `*Email:* ${email}%0A` +
-    `*Phone:* ${phone}%0A` +
-    `*Service:* ${serviceName}%0A%0A` +
-    `*Message:* ${message}`;
-  
-  window.open(`https://wa.me/923001234567?text=${whatsappMessage}`, '_blank');
-  
-  // Send Email
-  const subject = `New Inquiry from ${name}`;
-  const body = 
-    `Name: ${name}%0A` +
-    `Email: ${email}%0A` +
-    `Phone: ${phone}%0A` +
-    `Service: ${serviceName}%0A%0A` +
-    `Message: ${message}`;
-  
-  window.location.href = `mailto:info@hnis.com?subject=${subject}&body=${body}`;
-  
-  showPopup('success', `
-    <strong>Inquiry Sent! ✅</strong><br><br>
-    Your inquiry has been sent via <strong>WhatsApp & Email</strong>.<br><br>
-    <strong>Details:</strong><br>
-    👤 ${name}<br>
-    📧 ${email}<br>
-    📱 ${phone}<br>
-    🔧 ${serviceName}<br><br>
-    <small>Our team will respond to you shortly.</small>
-  `);
-  
-  document.getElementById('contactForm').reset();
-  return false;
-}
-
-// ===== EMAIL VALIDATION =====
-function validateEmail(email) {
-  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return re.test(email);
-}
-
-// ===== POPUP FUNCTION =====
-function showPopup(type, message) {
-  let popup = document.getElementById('customPopup');
-  
-  if (!popup) {
-    popup = document.createElement('div');
-    popup.id = 'customPopup';
-    popup.className = 'custom-popup';
-    document.body.appendChild(popup);
-  }
-  
-  const icon = type === 'success' ? '✅' : '❌';
-  const title = type === 'success' ? 'Success!' : 'Error!';
-  const color = type === 'success' ? '#10b981' : '#ef4444';
-  
-  popup.innerHTML = `
-    <div class="popup-overlay">
-      <div class="popup-box ${type}">
-        <div class="popup-header" style="background: ${color}">
-          <span class="popup-icon">${icon}</span>
-          <span class="popup-title">${title}</span>
-          <button class="popup-close" onclick="closePopup()">×</button>
-        </div>
-        <div class="popup-body">
-          ${message}
-        </div>
-        <div class="popup-footer">
-          <button class="popup-btn ${type}" onclick="closePopup()">OK, Got it!</button>
-        </div>
-      </div>
-    </div>
-  `;
-  
-  if (!document.getElementById('popupStyles')) {
-    const styles = document.createElement('style');
-    styles.id = 'popupStyles';
-    styles.textContent = `
-      .custom-popup {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        z-index: 99999;
-        animation: popupFadeIn 0.3s ease;
-      }
-      .popup-overlay {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 100%;
-        height: 100%;
-        background: rgba(0,0,0,0.6);
-        backdrop-filter: blur(4px);
-        padding: 20px;
-      }
-      .popup-box {
-        max-width: 450px;
-        width: 100%;
-        background: #fff;
-        border-radius: 16px;
-        overflow: hidden;
-        box-shadow: 0 25px 60px rgba(0,0,0,0.3);
-        animation: popupSlideUp 0.3s ease;
-      }
-      .popup-header {
-        padding: 16px 20px;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        color: #fff;
-      }
-      .popup-icon { font-size: 24px; }
-      .popup-title { font-size: 18px; font-weight: 700; flex: 1; }
-      .popup-close {
-        background: none;
-        border: none;
-        color: #fff;
-        font-size: 28px;
-        cursor: pointer;
-        opacity: 0.7;
-        transition: opacity 0.3s ease;
-        padding: 0 4px;
-      }
-      .popup-close:hover { opacity: 1; }
-      .popup-body {
-        padding: 25px 20px 20px;
-        font-size: 14px;
-        line-height: 1.7;
-        color: #1a2a4a;
-      }
-      .popup-body strong { color: #0a3a6b; }
-      .popup-body small {
-        color: #7a8a9a;
-        font-size: 12px;
-        display: block;
-        margin-top: 10px;
-        font-style: italic;
-      }
-      .popup-footer {
-        padding: 10px 20px 20px;
-        display: flex;
-        justify-content: flex-end;
-      }
-      .popup-btn {
-        padding: 10px 30px;
-        border: none;
-        border-radius: 8px;
-        font-size: 14px;
-        font-weight: 700;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        color: #fff;
-      }
-      .popup-btn.success { background: linear-gradient(135deg, #10b981, #059669); }
-      .popup-btn.error { background: linear-gradient(135deg, #ef4444, #dc2626); }
-      .popup-btn:hover {
-        transform: scale(1.05);
-        box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-      }
-      @keyframes popupFadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-      }
-      @keyframes popupSlideUp {
-        from { opacity: 0; transform: translateY(30px) scale(0.95); }
-        to { opacity: 1; transform: translateY(0) scale(1); }
-      }
-      @media(max-width: 480px) {
-        .popup-box { margin: 10px; }
-        .popup-body { padding: 20px 16px 16px; font-size: 13px; }
-        .popup-header { padding: 14px 16px; }
-        .popup-title { font-size: 16px; }
-      }
-    `;
-    document.head.appendChild(styles);
-  }
-}
-
-function closePopup() {
-  const popup = document.getElementById('customPopup');
-  if (popup) {
-    popup.style.animation = 'popupFadeIn 0.2s ease reverse';
-    setTimeout(() => popup.remove(), 300);
-  }
-}
-
-document.addEventListener('click', function(e) {
-  if (e.target.classList.contains('popup-overlay')) closePopup();
-});
-
-document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') closePopup();
-});
-// ============================================================
-// TECHNICAL PORTFOLIO - INDUSTRIES PAGE
-// ============================================================
-
-const portfolioData = {
-  cctv: {
-    badge: 'CCTV Systems',
-    title: '4K Ultra HD IP Cameras',
-    description: 'High-resolution IP cameras with 4K UHD clarity, advanced low-light sensors, and 24/7 continuous recording.',
-    features: [
-      '4K Ultra HD Resolution',
-      'Advanced Low-Light Sensors',
-      '24/7 Continuous Recording',
-      'AI Motion Detection',
-      'Remote Monitoring Access'
-    ],
-    image: 'images/cctv-system.jpg',
-    icon: 'fa-solid fa-video'
-  },
-  access: {
-    badge: 'Access Control',
-    title: 'Biometric & Smart Access',
-    description: 'Secure control of people and entry points with modern identification technologies.',
-    features: [
-      'Biometric Readers (Fingerprint, Face)',
-      'Card & PIN Systems',
-      'Mobile Access Solutions',
-      'Time Attendance Integration',
-      'Remote Door Management'
-    ],
-    image: 'images/access-control-system.jpg',
-    icon: 'fa-solid fa-fingerprint'
-  },
-  networking: {
-    badge: 'Networking',
-    title: 'Enterprise Network Infrastructure',
-    description: 'Reliable connectivity and structured infrastructure for business-critical systems.',
-    features: [
-      'Structured Cabling (Cat6, Cat7)',
-      'Fiber Optics Installation',
-      'Enterprise Switching & Routing',
-      'Wi-Fi 6/6E Infrastructure',
-      'Network Security & Monitoring'
-    ],
-    image: 'images/networking-system.jpg',
-    icon: 'fa-solid fa-network-wired'
-  },
-  fire: {
-    badge: 'Fire Safety',
-    title: 'Advanced Fire Detection Systems',
-    description: 'Life-safety systems for early detection, notification and emergency response.',
-    features: [
-      'Intelligent Fire Panels',
-      'Smoke & Heat Detection',
-      'Alarm Integration',
-      'Emergency Voice Evacuation',
-      '24/7 Remote Monitoring'
-    ],
-    image: 'images/fire-safety-system.jpg',
-    icon: 'fa-solid fa-fire-extinguisher'
-  },
-  cyber: {
-    badge: 'Cyber Security',
-    title: 'Enterprise Cyber Security',
-    description: 'Security-minded infrastructure and controls designed to reduce technology risks.',
-    features: [
-      'Network Security & Firewalls',
-      'System Hardening',
-      'Secure Infrastructure Design',
-      'Vulnerability Assessments',
-      'Security Monitoring & Response'
-    ],
-    image: 'images/cyber-security-system.jpg',
-    icon: 'fa-solid fa-shield-halved'
-  },
-  integration: {
-    badge: 'System Integration',
-    title: 'End-to-End System Integration',
-    description: 'Complete integration of security, IT and building technologies into one unified platform.',
-    features: [
-      'Multi-System Integration',
-      'Centralized Monitoring',
-      'Scalable Architecture',
-      'Legacy System Upgrades',
-      'Future-Ready Infrastructure'
-    ],
-    image: 'images/integration-system.jpg',
-    icon: 'fa-solid fa-server'
-  }
-};
-
-function showPortfolio(target) {
-  // Update active button
-  document.querySelectorAll('.portfolio-btn').forEach(btn => {
-    btn.classList.remove('active');
+// ===== MAGNETIC BUTTONS =====
+(function initMagnetic() {
+  if (!isFinePointer || prefersReducedMotion) return;
+  document.querySelectorAll('.btn, .fab, .nav-btn').forEach(btn => {
+    btn.addEventListener('mousemove', (e) => {
+      const r = btn.getBoundingClientRect();
+      const mx = e.clientX - (r.left + r.width / 2);
+      const my = e.clientY - (r.top + r.height / 2);
+      btn.style.transform = `translate(${mx * 0.15}px, ${my * 0.2}px)`;
+    });
+    btn.addEventListener('mouseleave', () => { btn.style.transform = ''; });
   });
-  const activeBtn = document.querySelector(`.portfolio-btn[data-target="${target}"]`);
-  if (activeBtn) {
-    activeBtn.classList.add('active');
-  }
-  
-  // Get data
-  const data = portfolioData[target];
-  if (!data) return;
-  
-  // Update content
-  const container = document.getElementById('portfolioContent');
-  if (!container) return;
-  
-  container.innerHTML = `
-    <div class="portfolio-text">
-      <span class="badge"><i class="${data.icon}"></i> ${data.badge}</span>
-      <h3>${data.title}</h3>
-      <p>${data.description}</p>
-      <ul>
-        ${data.features.map(f => `<li><i class="fa-solid fa-circle-check"></i> ${f}</li>`).join('')}
-      </ul>
-    </div>
-    <div class="portfolio-image">
-      <img src="${data.image}" alt="${data.badge}" onerror="this.parentElement.innerHTML='<i class=\\'fa-solid ${data.icon} placeholder-icon\\'></i>'">
-    </div>
-  `;
-  
-  // Re-trigger animation
-  container.style.animation = 'none';
-  setTimeout(() => {
-    container.style.animation = 'contentFade 0.4s ease';
-  }, 10);
-}
-
-// Load default content on page load
-document.addEventListener('DOMContentLoaded', function() {
-  showPortfolio('cctv');
-});
-// ============================================================
-// PROJECT SLIDER - MULTI IMAGES
-// ============================================================
-
-// Store slide states
-const slideStates = {};
-
-function initSlider(projectId) {
-  if (!slideStates[projectId]) {
-    slideStates[projectId] = {
-      currentSlide: 0,
-      totalSlides: document.querySelectorAll(`#dots-${projectId} .dot`).length
-    };
-  }
-}
-
-function changeSlide(projectId, direction) {
-  initSlider(projectId);
-  const state = slideStates[projectId];
-  const track = document.querySelector(`.project-slider[data-project="${projectId}"] .slider-track`);
-  const dots = document.querySelectorAll(`#dots-${projectId} .dot`);
-  
-  if (!track) return;
-  
-  state.currentSlide += direction;
-  
-  if (state.currentSlide < 0) {
-    state.currentSlide = state.totalSlides - 1;
-  } else if (state.currentSlide >= state.totalSlides) {
-    state.currentSlide = 0;
-  }
-  
-  track.style.transform = `translateX(-${state.currentSlide * 100}%)`;
-  
-  // Update dots
-  dots.forEach((dot, index) => {
-    dot.classList.toggle('active', index === state.currentSlide);
-  });
-}
-
-function goToSlide(projectId, slideIndex) {
-  initSlider(projectId);
-  const state = slideStates[projectId];
-  const track = document.querySelector(`.project-slider[data-project="${projectId}"] .slider-track`);
-  const dots = document.querySelectorAll(`#dots-${projectId} .dot`);
-  
-  if (!track) return;
-  
-  state.currentSlide = slideIndex;
-  track.style.transform = `translateX(-${slideIndex * 100}%)`;
-  
-  dots.forEach((dot, index) => {
-    dot.classList.toggle('active', index === slideIndex);
-  });
-}
-
-// Auto-slide for each project
-function startAutoSlide(projectId) {
-  setInterval(() => {
-    changeSlide(projectId, 1);
-  }, 4000);
-}
-
-// Initialize all sliders on page load
-document.addEventListener('DOMContentLoaded', function() {
-  const sliders = document.querySelectorAll('.project-slider');
-  sliders.forEach(slider => {
-    const projectId = slider.dataset.project;
-    initSlider(projectId);
-    startAutoSlide(projectId);
-  });
-});
-
-// Pause auto-slide on hover
-document.querySelectorAll('.project-card').forEach(card => {
-  card.addEventListener('mouseenter', function() {
-    // Pause auto-slide (optional)
-  });
-});
+})();
